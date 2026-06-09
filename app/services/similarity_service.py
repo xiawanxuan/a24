@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Optional, Tuple, Dict, Any
-from app import crud, models
+from app import crud, models, schemas
 from data.sample_data import get_shengmu_order, get_yunmu_order
 
 
@@ -211,16 +211,16 @@ class SimilarityService:
                     best_result = {
                         "char1": char1,
                         "char2": char2,
-                        "char1_info": c1,
-                        "char2_info": c2,
+                        "char1_info": schemas.GuangyunCharRead.model_validate(c1),
+                        "char2_info": schemas.GuangyunCharRead.model_validate(c2),
                         "shengmu_similarity": round(sm_sim, 4),
                         "yunmu_similarity": round(ym_sim, 4),
                         "shengdiao_similarity": round(sd_sim, 4),
                         "overall_similarity": round(overall, 4),
                         "details": {
-                            "shengmu_details": sm_details,
-                            "yunmu_details": ym_details,
-                            "shengdiao_details": sd_details,
+                            "shengmu_details": dict(sm_details),
+                            "yunmu_details": dict(ym_details),
+                            "shengdiao_details": dict(sd_details),
                             "weights": {
                                 "shengmu_weight": 0.35,
                                 "yunmu_weight": 0.45,

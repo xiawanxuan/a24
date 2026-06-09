@@ -47,31 +47,36 @@ class PhonologyService:
         lower_yunmu_list = list(set(c.yunmu for c in lower_chars if c.yunmu))
         lower_shengdiao_list = list(set(c.shengdiao for c in lower_chars if c.shengdiao))
 
-        if not upper_shengmu_list or not lower_yunmu_list:
+        lower_pronunciations = list(set(
+            (c.yunmu, c.shengdiao)
+            for c in lower_chars
+            if c.yunmu and c.shengdiao
+        ))
+
+        if not upper_shengmu_list or not lower_pronunciations:
             return None
 
         results = []
         for usm in upper_shengmu_list:
-            for lym in lower_yunmu_list:
-                for lsd in lower_shengdiao_list:
-                    possible_chars = crud.search_chars(
-                        self.db,
-                        shengmu=usm,
-                        yunmu=lym,
-                        shengdiao=lsd,
-                        limit=50
-                    )
-                    combined = f"{usm}母 + {lym}韵 + {lsd}声"
-                    results.append({
-                        "upper_shengmu": usm,
-                        "lower_yunmu": lym,
-                        "lower_shengdiao": lsd,
-                        "combined_pronunciation": combined,
-                        "possible_chars": [
-                            schemas.GuangyunCharRead.model_validate(c)
-                            for c in possible_chars
-                        ]
-                    })
+            for lym, lsd in lower_pronunciations:
+                possible_chars = crud.search_chars(
+                    self.db,
+                    shengmu=usm,
+                    yunmu=lym,
+                    shengdiao=lsd,
+                    limit=50
+                )
+                combined = f"{usm}母 + {lym}韵 + {lsd}声"
+                results.append({
+                    "upper_shengmu": usm,
+                    "lower_yunmu": lym,
+                    "lower_shengdiao": lsd,
+                    "combined_pronunciation": combined,
+                    "possible_chars": [
+                        schemas.GuangyunCharRead.model_validate(c)
+                        for c in possible_chars
+                    ]
+                })
 
         return {
             "upper_char": upper_char,
