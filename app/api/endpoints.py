@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.database import get_db
-from app import schemas
+from app import schemas, crud
 from app.services.phonology_service import PhonologyService
 from app.services.similarity_service import SimilarityService
+from app.services.rhyme_chart_service import RhymeChartService
 
 router = APIRouter(prefix="/api/v1", tags=["guangyun"])
 
@@ -180,3 +182,105 @@ def find_similar_chars(
     if results is None:
         raise HTTPException(status_code=404, detail=f"未找到汉字 '{char}' 的音韵信息")
     return results
+
+
+@router.post("/rhyme-chart", response_model=schemas.RhymeChartResponse, summary="构建等韵图（JSON格式）")
+def build_rhyme_chart(
+    request: schemas.RhymeChartRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    给定汉字序列，自动在等韵图中标出每个字的位置，返回 JSON 格式的韵图数据。
+    
+    - **char_list**: 汉字列表
+    - **she_filter**: 可选，只显示某一摄
+    - **hu_filter**: 可选，只显示开口或合口
+    - **shengdiao_filter**: 可选，只显示某一声调
+    - **group_by**: 分组方式：she（按韵摄）或 shengdiao（按声调）
+    """
+    service = RhymeChartService(db)
+    result = service.build_rhyme_chart(
+        char_list=request.char_list,
+        she_filter=request.she_filter,
+        hu_filter=request.hu_filter,
+        shengdiao_filter=request.shengdiao_filter,
+        group_by=request.group_by
+    )
+    if not result["charts"]:
+        raise HTTPException(status_code=404, detail="未找到可用于构建韵图的汉字数据")
+    return result
+
+
+@router.post("/rhyme-chart/svg", summary="生成等韵图 SVG 图像")
+def generate_rhyme_chart_svg(
+    request: schemas.RhymeChartRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    给定汉字序列，生成 SVG 格式的等韵图图像。
+    
+    - **char_list**: 汉字列表
+    - **she_filter**: 可选，只显示某一摄
+    - **hu_filter**: 可选，只显示开口或合口
+    - **shengdiao_filter**: 可选，只显示某一声调
+    - **group_by**: 分组方式：she（按韵摄）或 shengdiao（按声调）
+    """
+    service = RhymeChartService(db)
+    svg = service.generate_svg(
+        char_list=request.char_list,
+        she_filter=request.she_filter,
+        hu_filter=request.hu_filter,
+        shengdiao_filter=request.shengdiao_filter,
+    )
+    if not svg:
+        raise HTTPException(status_code=404, detail="无法生成韵图 SVG")
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.get("/rhyme-chart/she/list", response_model=List[str], summary="获取所有可用韵摄列表")
+def get_available_she_list(db: Session = Depends(get_db)):
+    """
+    获取数据库中所有可用的韵摄列表。
+    """
+    service = RhymeChartService(db)
+    return service.get_available_she_list()
+
+
+@router.get("/rhyme-chart/she/{she}/svg", summary="获取指定韵摄的等韵图 SVG")
+def get_she_rhyme_chart_svg(
+    she: str,
+    width: int = Query(1000, ge=500, le=3000, description="SVG 宽度"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取指定韵摄下所有汉字的等韵图 SVG 图像。
+    
+    - **she**: 韵摄名称（如通、江、止、遇等）
+    - **width**: 图像宽度
+    """
+    service = RhymeChartService(db)
+    svg = service.generate_single_she_svg(she, width=width)
+    if not svg:
+        raise HTTPException(status_code=404, detail=f"未找到韵摄 '{she}' 的数据")
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.get("/rhyme-chart/she/{she}", summary="获取指定韵摄的完整等韵图（JSON）")
+def get_she_rhyme_chart(
+    she: str,
+    db: Session = Depends(get_db)
+):
+    """
+    获取指定韵摄下所有汉字的等韵图。
+    
+    - **she**: 韵摄名称（如通、江、止、遇等）
+    """
+    service = RhymeChartService(db)
+    all_chars = crud.search_chars(db, she=she, limit=500)
+    if not all_chars:
+        raise HTTPException(status_code=404, detail=f"未找到韵摄 '{she}' 的数据")
+    char_list = [c.char for c in all_chars]
+    result = service.build_rhyme_chart(char_list, she_filter=she)
+    if not result["charts"]:
+        raise HTTPException(status_code=404, detail=f"未找到韵摄 '{she}' 的数据")
+    return result
